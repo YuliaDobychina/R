@@ -1,0 +1,634 @@
+# необходимые для работы пакеты
+
+install.packages('BatchGetSymbols')
+install.packages('keras')
+install.packages('tensorflow')
+install.packages('plotly')
+install.packages('ggplot2')
+install.packages('minimax')
+
+
+library(BatchGetSymbols)
+library('keras')
+library('tensorflow')
+library('minimax')
+library(plotly)
+
+
+# загрузка данных по индексу IPC MEXICO
+tickers <- c('%5EMXX')
+first.date <- Sys.Date() - 360*5
+last.date <- Sys.Date()
+
+yts <- BatchGetSymbols(tickers = tickers,
+                       first.date = first.date,
+                       last.date = last.date,
+                       cache.folder = file.path(tempdir(),
+                                                'BGS_Cache') )
+
+y <-  yts$df.tickers$price.close
+myts <-  data.frame(index = yts$df.tickers$ref.date, price = y, vol = yts$df.tickers$volume)
+myts <-  myts[complete.cases(myts), ]
+myts <-  myts[-seq(nrow(myts) - 1200), ]
+myts$index <-  seq(nrow(myts))
+
+# стандартизация 
+
+msd.price <-  c(mean(myts$price), sd(myts$price))
+msd.vol <-  c(mean(myts$vol), sd(myts$vol))
+myts$price <-  (myts$price - msd.price[1])/msd.price[2]
+myts$vol <-  (myts$vol - msd.vol[1])/msd.vol[2]
+summary(myts)
+
+# Формирование тестовой и тренировочной выборки
+
+datalags = 10
+train <-  myts[seq(1000 + datalags), ]
+test <-  myts[1000 + datalags + seq(200 + datalags), ]
+batch.size <- 50
+
+# подготовка данных к анализу
+
+x.train <-  array(data = lag(cbind(train$price, train$vol), datalags)[-(1:datalags), ], dim = c(nrow(train) - datalags, datalags, 2))
+y.train = array(data = train$price[-(1:datalags)], dim = c(nrow(train)-datalags, 1))
+
+x.test <-  array(data = lag(cbind(test$vol, test$price), datalags)[-(1:datalags), ], dim = c(nrow(test) - datalags, datalags, 2))
+y.test <-  array(data = test$price[-(1:datalags)], dim = c(nrow(test) - datalags, 1))
+
+
+# вывод интерактивного графика котировок
+plot_ly(myts, x = ~index, y = ~price, type = "scatter", mode = "markers", color = ~vol)
+# автокорреляционная функция
+acf(myts$price, lag.max = 1200)
+
+
+###############################################################################
+#################### LSTM #####################################################
+###############################################################################
+
+################ LSTM / adam / mse ############################################
+lstm <- keras_model_sequential()  %>%
+  layer_lstm(units = 100,
+             input_shape = c(datalags, 2),
+             batch_size = batch.size,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = FALSE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1)
+
+lstm %>%
+  compile(loss = 'mse', optimizer = 'adam')
+lstm %>% fit(x.train, y.train, epochs = 45, batch_size = batch.size)
+
+
+lstm_adam_mse = 0.1274
+
+################ LSTM / adam / mae ############################################
+lstm <- keras_model_sequential()  %>%
+  layer_lstm(units = 100,
+             input_shape = c(datalags, 2),
+             batch_size = batch.size,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = FALSE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1)
+
+lstm %>%
+  compile(loss = 'mae', optimizer = 'adam')
+lstm %>% fit(x.train, y.train, epochs = 45, batch_size = batch.size)
+
+
+lstm_adam_mae = 0.2814
+
+################ LSTM / adam / mape ############################################
+
+lstm <- keras_model_sequential()  %>%
+  layer_lstm(units = 100,
+             input_shape = c(datalags, 2),
+             batch_size = batch.size,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = FALSE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1)
+
+lstm %>%
+  compile(loss = 'mape', optimizer = 'adam')
+lstm %>% fit(x.train, y.train, epochs = 45, batch_size = batch.size)
+
+
+lstm_adam_mape = 112.0612
+
+################ LSTM / rmsprop / mse ############################################
+
+lstm <- keras_model_sequential()  %>%
+  layer_lstm(units = 100,
+             input_shape = c(datalags, 2),
+             batch_size = batch.size,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = FALSE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1)
+
+lstm %>%
+  compile(loss = 'mse', optimizer = 'rmsprop')
+lstm %>% fit(x.train, y.train, epochs = 45, batch_size = batch.size)
+
+
+lstm_rmsprop_mse = 0.1328
+
+################ LSTM / rmsprop / mae ############################################
+
+lstm <- keras_model_sequential()  %>%
+  layer_lstm(units = 100,
+             input_shape = c(datalags, 2),
+             batch_size = batch.size,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = FALSE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1)
+
+lstm %>%
+  compile(loss = 'mae', optimizer = 'rmsprop')
+lstm %>% fit(x.train, y.train, epochs = 45, batch_size = batch.size)
+
+
+lstm_rmsprop_mae = 0.2853
+
+################ LSTM / rmsprop / mape ############################################
+
+lstm <- keras_model_sequential()  %>%
+  layer_lstm(units = 100,
+             input_shape = c(datalags, 2),
+             batch_size = batch.size,
+             return_sequences = TRUE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+             return_sequences = FALSE,
+             stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  layer_dense(units = 1)
+
+lstm %>%
+  compile(loss = 'mape', optimizer = 'rmsprop')
+lstm %>% fit(x.train, y.train, epochs = 45, batch_size = batch.size)
+
+lstm_rmsprop_mape = 106.9867
+
+
+
+###############################################################################
+#################### RNN ######################################################
+###############################################################################
+
+################ RNN / sigmoid / rmsprop / mse ###################################
+
+x.train <-  array(data = lag(cbind(train$price, train$vol), datalags)[-(1:datalags), ], dim = c(nrow(train) - datalags, datalags))
+y.train <- array(data = train$price[-(1:datalags)], dim = c(nrow(train)-datalags))
+
+x.test <-  array(data = lag(cbind(test$vol, test$price), datalags)[-(1:datalags), ], dim = c(nrow(test) - datalags, datalags))
+y.test <-  array(data = test$price[-(1:datalags)], dim = c(nrow(test) - datalags))
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+rnn %>% compile(
+  optimizer = "rmsprop",
+  loss = "mse",
+)
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+
+rnn_sigmoid_rmsprop_mse = 0.0803
+
+################ RNN / sigmoid / rmsprop / mae ###################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+rnn %>% compile(
+  optimizer = "rmsprop",
+  loss = "mae",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+rnn_sigmoid_rmsprop_mae = 0.2426
+
+################ RNN / sigmoid / rmsprop / mape ###################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+rnn %>% compile(
+  optimizer = "rmsprop",
+  loss = "mape",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+
+rnn_sigmoid_rmsprop_mape = 93.8013
+
+################ RNN / sigmoid / adam / mse #################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+rnn %>% compile(
+  optimizer = "adam",
+  loss = "mse",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+rnn_sigmoid_adam_mse = 0.0803
+
+################ RNN / sigmoid / adam / mae #################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+rnn %>% compile(
+  optimizer = "adam",
+  loss = "mae",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+rnn_sigmoid_adam_mae = 0.2426
+
+################ RNN / sigmoid / adam / mape #################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "sigmoid")
+rnn %>% compile(
+  optimizer = "adam",
+  loss = "mape",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+rnn_sigmoid_adam_mape = 93.4185
+
+
+
+################ RNN / relu / rmsprop / mse ###################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "relu")
+rnn %>% compile(
+  optimizer = "rmsprop",
+  loss = "mse",
+)
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+
+rnn_relu_rmsprop_mse = 0.0809
+
+################ RNN / relu / rmsprop / mae ###################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "relu")
+rnn %>% compile(
+  optimizer = "rmsprop",
+  loss = "mae",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+rnn_relu_rmsprop_mae = 0.5123
+
+################ RNN / relu / rmsprop / mape ###################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "relu")
+rnn %>% compile(
+  optimizer = "rmsprop",
+  loss = "mape",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+
+rnn_relu_rmsprop_mape = 100
+
+################ RNN / relu / adam / mse #################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "relu")
+rnn %>% compile(
+  optimizer = "adam",
+  loss = "mse",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+rnn_relu_adam_mse = 0.0812
+
+################ RNN / relu / adam / mae #################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "relu")
+rnn %>% compile(
+  optimizer = "adam",
+  loss = "mae",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+rnn_relu_adam_mae = 0.5123
+
+################ RNN / relu / adam / mape #################################
+
+rnn <- keras_model_sequential() %>%
+  layer_embedding(input_dim = 10000, output_dim = 50) %>%
+  layer_simple_rnn(units = 50) %>%
+  layer_dense(units = 1, activation = "relu")
+rnn %>% compile(
+  optimizer = "adam",
+  loss = "mape",
+)
+
+rnn %>% fit(x.train, y.train, epochs = 45,batch_size = 50, validation_split = 0.2)
+
+rnn_relu_adam_mape = 100
+
+
+###############################################################################
+#################### SM #######################################################
+###############################################################################
+
+################ SM / relu / adam / mse #######################################
+
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'relu') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'adam',
+  loss = 'mse')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+
+sm_relu_adam_mse = 0.0789
+
+################ SM / relu / adam / mae #######################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'relu') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'adam',
+  loss = 'mae')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+
+sm_relu_adam_mae = 0.2403
+
+################ SM / relu / adam / mape #######################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'relu') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'adam',
+  loss = 'mape')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+sm_relu_adam_mape = 100.4123
+
+################ SM / relu / rmsprop / mae ####################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'relu') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'rmsprop',
+  loss = 'mae')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+sm_relu_rmsprop_mae = 0.2403
+
+################ SM / relu / rmsprop / mse ####################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'relu') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'rmsprop',
+  loss = 'mse')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+sm_relu_rmsprop_mse = 0.0789
+################ SM / relu / rmsprop / mape ####################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'relu') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'rmsprop',
+  loss = 'mape')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+sm_relu_rmsprop_mape = 126.4695
+
+
+
+################ SM / sigmoid / adam / mse #####################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'sigmoid') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'adam',
+  loss = 'mse')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+sm_sigmoid_adam_mse = 0.0790
+
+################ SM / sigmoid / adam / mae #####################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'sigmoid') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'adam',
+  loss = 'mae')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+
+sm_sigmoid_adam_mae = 0.2405
+
+################ SM / sigmoid / adam / mape ####################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'sigmoid') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'adam',
+  loss = 'mape')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+
+sm_sigmoid_adam_mape = 167
+
+################ SM / sigmoid / rmsprop / mae ##################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'sigmoid') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'rmsprop',
+  loss = 'mae')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+sm_sigmoid_rmsprop_mae = 0.2400
+
+################ SM / sigmoid / rmsprop / mse ##################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'sigmoid') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'rmsprop',
+  loss = 'mae')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+sm_sigmoid_rmsprop_mse = 0.2406
+
+################ SM / sigmoid / rmsprop / mape #################################
+
+sm <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'sigmoid') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm %>% compile(
+  optimizer = 'rmsprop',
+  loss = 'mape')
+sm%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+sm_sigmoid_rmsprop_mape = 146.4049
+
+###############################################################################
+#################### Сводная таблица ##########################################
+###############################################################################
+
+
+table <- data.frame(c("LSTM", "LSTM", "SM", "SM", "SM", "SM", "RNN", "RNN", "RNN", "RNN"),
+                     c("adam", "rmsprop", "adam", "adam", "rmsprop", "rmsprop", "adam", "adam", "rmsprop", "rmsprop"),
+                     c("none", "none","relu", "sigmoid","relu", "sigmoid","relu", "sigmoid","relu", "sigmoid"),
+                     c(lstm_adam_mae, lstm_rmsprop_mae, 
+                       sm_relu_adam_mae, sm_sigmoid_adam_mae, sm_relu_rmsprop_mae, sm_sigmoid_rmsprop_mae,
+                       rnn_relu_adam_mae, rnn_sigmoid_adam_mae, rnn_relu_rmsprop_mae, rnn_sigmoid_rmsprop_mae),
+                     c(lstm_adam_mse, lstm_rmsprop_mse, 
+                       sm_relu_adam_mse, sm_sigmoid_adam_mse, sm_relu_rmsprop_mse, sm_sigmoid_rmsprop_mse,
+                       rnn_relu_adam_mse, rnn_sigmoid_adam_mse, rnn_relu_rmsprop_mse, rnn_sigmoid_rmsprop_mse),
+                     c(lstm_adam_mape, lstm_rmsprop_mape, 
+                       sm_relu_adam_mape, sm_sigmoid_adam_mape, sm_relu_rmsprop_mape, sm_sigmoid_rmsprop_mape,
+                       rnn_relu_adam_mape, rnn_sigmoid_adam_mape, rnn_relu_rmsprop_mape, rnn_sigmoid_rmsprop_mape)
+)
+
+colnames(table) <- c("model", "optimizer","activation", "mae","mse","mape")
+
+table
+
+
+
+# Минимальные остатки (0,0789) демонстрируют 2 модели: SM_adam__rule_mse и SM_rmsprop__rule_mse.
+
+################ SM / relu / adam / mse #######################################
+
+
+sm_1 <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'relu') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm_1 %>% compile(
+  optimizer = 'adam',
+  loss = 'mse')
+sm_1%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+
+sm_relu_adam_mse = 0.0789
+
+
+################ SM / relu / rmsprop / mse ####################################
+
+sm_2 <- keras_model_sequential() %>%
+  layer_dense(units = 1, activation = 'relu') %>%
+  layer_dense(units = 5, activation = 'sigmoid')
+
+sm_2 %>% compile(
+  optimizer = 'rmsprop',
+  loss = 'mse')
+sm_2%>% fit(x.train, y.train, epochs = 45, batch_size = 50)
+
+sm_relu_rmsprop_mse = 0.0789
+
+
+#### Предсказание по модели и сравнение с тестовой выборкой ###################
+
+pred_out <- sm_1 %>% predict(x.test, batch_size = batch.size) %>% .[,1]
+
+plot_ly(myts, x = ~index, y = ~price, type = "scatter", mode = "markers", color = ~vol) %>%
+  add_trace(y = c(rep(NA, 1000), pred_out), x = myts$index, name = "SM (adam) prediction", color = 'black')
+plot(y.test - pred_out, type = 'line')
+plot(x = y.test, y = pred_out)
+
+
+
+pred_out <- sm_2 %>% predict(x.test, batch_size = batch.size) %>% .[,1]
+
+plot_ly(myts, x = ~index, y = ~price, type = "scatter", mode = "markers", color = ~vol) %>%
+  add_trace(y = c(rep(NA, 1000), pred_out), x = myts$index, name = "SM (rmsprop) prediction", color = 'black')
+plot(y.test - pred_out, type = 'line')
+plot(x = y.test, y = pred_out)
