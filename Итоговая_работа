@@ -56,7 +56,7 @@ x.test <-  array(data = lag(cbind(test$vol, test$price), datalags)[-(1:datalags)
 y.test <-  array(data = test$price[-(1:datalags)], dim = c(nrow(test) - datalags, 1))
 
 
-# вывод интерактивного графика котировок
+# Графический способ анализа
 plot_ly(myts, x = ~index, y = ~price, type = "scatter", mode = "markers", color = ~vol)
 # автокорреляционная функция
 acf(myts$price, lag.max = 1200)
